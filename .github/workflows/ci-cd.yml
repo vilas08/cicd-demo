@@ -1,0 +1,88 @@
+name: CI/CD Pipeline
+
+# ---------- TRIGGERS: when does the pipeline start? ----------
+on:
+  push:                          # 1. when you push to main
+    branches: [main]
+    paths-ignore: ['**.md']      #    but not if only README changed
+  pull_request:                  # 2. when someone opens a pull request to main
+    branches: [main]
+  schedule:                      # 3. automatically every Monday 3:00 AM UTC
+    - cron: '0 3 * * 1'
+  workflow_dispatch:             # 4. manual "Run workflow" button
+    inputs:
+      deploy:
+        description: 'Deploy after build?'
+        type: boolean
+        default: true
+
+# Cancel an older run if a newer push happens on the same branch
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------- JOB 1: Lint (runs at the same time as Test) ----------
+  lint:
+    name: 1. Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm run lint
+
+  # ---------- JOB 2: Test on multiple Node versions (matrix) ----------
+  test:
+    name: 2. Test (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [20, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - run: npm test
+
+  # ---------- JOB 3: Build (waits for Lint AND Test) ----------
+  build:
+    name: 3. Build
+    needs: [lint, test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  # ---------- JOB 4: Deploy (only on main, never on pull requests) ----------
+  deploy:
+    name: 4. Deploy
+    needs: build
+    runs-on: ubuntu-latest
+    if: >
+      github.ref == 'refs/heads/main' &&
+      github.event_name != 'pull_request' &&
+      (github.event_name != 'workflow_dispatch' || inputs.deploy)
+    environment: production
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - name: Show files to deploy
+        run: ls -la dist/
+      - name: Deploy
+        run: echo "Deployment successful!"
+      - name: Write summary
+        run: |
+          echo "### Deployed :rocket:" >> $GITHUB_STEP_SUMMARY
+          echo "Commit: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY

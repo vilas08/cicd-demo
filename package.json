@@ -1,0 +1,11 @@
+{
+    "name": "cicd-demo",
+    "version": "1.0.0",
+    "description": "Intermediate CI/CD demo with GitHub Actions",
+    "main": "app.js",
+    "scripts": {
+        "lint": "node --check app.js && node --check app.test.js && node --check build.js",
+        "test": "node --test",
+        "build": "node build.js"
+    }
+}
